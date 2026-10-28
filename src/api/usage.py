@@ -11,7 +11,10 @@
     并在返回里标 "cost_estimated": true —— 生产上也是这样，成本归因最细的维度是 provider×model。
 """
 
+from __future__ import annotations
+
 from pathlib import Path
+from typing import Optional
 
 import yaml
 from fastapi import APIRouter, Query
@@ -56,7 +59,7 @@ def cost_of(provider: str | None, model: str | None, in_tok: int, out_tok: int) 
 @router.get("/v1/usage")
 async def usage(
     group_by: str = Query("provider", pattern="^(provider|model|day)$"),
-    since: str | None = Query(None, description="只统计该时间之后的记录，如 2026-10-26"),
+    since: Optional[str] = Query(None, description="只统计该时间之后的记录，如 2026-10-26"),
 ):
     store = audit_logger.store
     if store is None:

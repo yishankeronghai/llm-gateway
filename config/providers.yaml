@@ -8,7 +8,7 @@
 providers:
   # ── DeepSeek (主通道, 你有 API Key, 优先使用) ──
   - name: deepseek
-    base_url: "http://127.0.0.1:9/v1"
+    base_url: "https://api.deepseek.com/v1"
     api_key: "${DEEPSEEK_API_KEY}"
     timeout: 120
     channels:
@@ -28,8 +28,8 @@ providers:
 
   # ── OpenAI (备用通道, DeepSeek 挂了自动切换到这里) ──
   - name: openai
-    base_url: "http://127.0.0.1:9/v1"
-    api_key: "mock-key"
+    base_url: "https://api.openai.com/v1"
+    api_key: "${OPENAI_API_KEY}"
     timeout: 30
     channels:
       - id: openai-primary

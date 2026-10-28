@@ -7,6 +7,8 @@
        形成链式结构，任何篡改都会导致后续哈希不匹配
 """
 
+from __future__ import annotations
+
 import sqlite3
 import hashlib
 import json

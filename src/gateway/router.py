@@ -8,6 +8,8 @@
 参考: LLMGov 的 Prompt Registry & Router
 """
 
+from __future__ import annotations
+
 import time
 import asyncio
 import logging

@@ -7,6 +7,8 @@
 参考: LLMGov 的 Provider Abstraction
 """
 
+from __future__ import annotations
+
 import json
 import time
 import httpx
