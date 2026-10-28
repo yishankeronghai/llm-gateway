@@ -1,0 +1,92 @@
+# ===========================================
+# 提供商与通道配置
+# 每个提供商可配置多个通道(endpoint)，支持负载均衡与故障转移
+# 故障转移: 同一模型名可在多个提供商注册, 按 priority 顺序尝试,
+#           前面的失败(断路器熔断/超时/5xx)会自动切换到后面的
+# ===========================================
+
+providers:
+  # ── DeepSeek (主通道, 你有 API Key, 优先使用) ──
+  - name: deepseek
+    base_url: "http://127.0.0.1:9/v1"
+    api_key: "${DEEPSEEK_API_KEY}"
+    timeout: 120
+    channels:
+      - id: deepseek-primary
+        priority: 1
+        weight: 100
+        models:
+          - deepseek-v4-flash      # V4-Flash 正式版 (284B MoE, 100万上下文)
+          - deepseek-chat          # V3 对话模型
+          - deepseek-reasoner      # R1 推理模型
+        # 虚拟模型 → 本通道真实模型: 客户端请求 auto-chat 时,
+        # 本通道实际调用 deepseek-chat
+        model_map:
+          auto-chat: deepseek-chat
+          auto-reason: deepseek-reasoner
+        tags: [primary, cost-effective]
+
+  # ── OpenAI (备用通道, DeepSeek 挂了自动切换到这里) ──
+  - name: openai
+    base_url: "http://127.0.0.1:9/v1"
+    api_key: "mock-key"
+    timeout: 30
+    channels:
+      - id: openai-primary
+        priority: 2
+        weight: 100
+        models:
+          - gpt-4o
+          - gpt-4o-mini
+        # 虚拟模型 → 本通道真实模型
+        model_map:
+          auto-chat: gpt-4o-mini
+          auto-reason: gpt-4o
+        tags: [backup]
+
+# ===========================================
+# 模型别名映射 - 客户端可使用别名，网关自动路由
+# ===========================================
+model_aliases:
+  "flash": "deepseek-v4-flash"     # 快捷别名 → V4-Flash
+  "v4": "deepseek-v4-flash"        # 快捷别名 → V4-Flash
+  "fast": "deepseek-v4-flash"      # fast 别名也指向 V4-Flash
+  "cheap": "deepseek-chat"         # 最便宜 → V3
+  "reason": "deepseek-reasoner"    # 推理 → R1
+  # ── 智能故障转移别名: 请求它时优先 DeepSeek, 挂了自动切 OpenAI ──
+  "auto": "auto-chat"              # 一键智能切换
+  "auto-chat": "auto-chat"
+
+# ===========================================
+# 负载均衡策略配置
+# ===========================================
+load_balancing:
+  # 策略: weighted_round_robin | least_latency | round_robin | random
+  strategy: weighted_round_robin
+  # 健康检查间隔(秒)
+  health_check_interval: 30
+  # 通道冷却时间(秒) - 故障后冷却期间不分配流量
+  cooldown_seconds: 60
+
+# ===========================================
+# 限流策略
+# ===========================================
+rate_limiting:
+  # 算法: sliding_window | fixed_window | token_bucket
+  algorithm: sliding_window
+  # 默认限制 (每分钟请求数)
+  default_rpm: 60
+  # 默认 TPM (每分钟 token 数)
+  default_tpm: 100000
+  # 按 API Key 维度限流
+  per_key: true
+
+# ===========================================
+# 流式配置
+# ===========================================
+streaming:
+  # 等"第一个 token"最多多少秒。超时即判定该通道失败并切下一个通道。
+  # 关键：此时客户端一个字都还没收到，所以切换是安全的（这是流式唯一能切的窗口）。
+  # 不要和 provider 的 timeout 混为一谈：timeout 是"整段话说多久"，这里只是"开不开口"。
+  first_token_timeout: 5
+

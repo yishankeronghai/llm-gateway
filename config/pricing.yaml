@@ -1,0 +1,21 @@
+# 模型单价表（用于成本聚合）
+#
+# 单位：元 / 百万 token（与各家官网口径一致，避免小数点误差）
+# input  = 输入（prompt）token 单价
+# output = 输出（completion）token 单价
+#
+# ⚠️ 这些是示例数字，请按你实际使用渠道的价格改。改这里不需要动代码。
+
+pricing:
+  deepseek:
+    deepseek-chat:     { input: 2.0,  output: 8.0 }
+    deepseek-reasoner: { input: 4.0,  output: 16.0 }
+    deepseek-v4-flash: { input: 0.5,  output: 2.0 }
+  openai:
+    gpt-4o-mini:       { input: 1.1,  output: 4.4 }
+    gpt-4o:            { input: 18.0, output: 72.0 }
+
+# 查不到单价时用的兜底价（避免成本显示为 0 而误判"免费"）
+fallback:
+  input: 2.0
+  output: 8.0

@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Gateway — 大模型智能网关监控台</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+            background: #f0f2f5; color: #1a1a2e; padding: 20px;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff; padding: 24px 32px; border-radius: 12px;
+            margin-bottom: 20px; display: flex; justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 { font-size: 22px; }
+        .header .badge { font-size: 13px; background: rgba(255,255,255,.2); padding: 4px 12px; border-radius: 20px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 20px; }
+        .card {
+            background: #fff; border-radius: 12px; padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,.06);
+        }
+        .card h2 { font-size: 14px; color: #888; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
+        .stat-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f0f0f0; }
+        .stat-row:last-child { border: none; }
+        .stat-label { color: #666; font-size: 13px; }
+        .stat-value { font-weight: 600; font-size: 14px; }
+        .stat-value.green { color: #52c41a; }
+        .stat-value.red { color: #f5222d; }
+        .stat-value.orange { color: #fa8c16; }
+        .table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .table th { text-align: left; padding: 10px 12px; background: #fafafa; color: #888; border-bottom: 2px solid #f0f0f0; }
+        .table td { padding: 10px 12px; border-bottom: 1px solid #f5f5f5; }
+        .table tr:hover { background: #fafafa; }
+        .pill { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; }
+        .pill.healthy { background: #f6ffed; color: #52c41a; border: 1px solid #b7eb8f; }
+        .pill.unhealthy { background: #fff2f0; color: #f5222d; border: 1px solid #ffa39e; }
+        .pill.closed { background: #f6ffed; color: #52c41a; border: 1px solid #b7eb8f; }
+        .pill.open { background: #fff2f0; color: #f5222d; border: 1px solid #ffa39e; }
+        .pill.half-open { background: #fff7e6; color: #fa8c16; border: 1px solid #ffd591; }
+        .pill.success { background: #f6ffed; color: #52c41a; }
+        .pill.error { background: #fff2f0; color: #f5222d; }
+        .tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+        .tab { padding: 8px 20px; border-radius: 8px 8px 0 0; cursor: pointer; font-size: 14px; color: #666; border: 1px solid #eee; border-bottom: none; background: #fafafa; }
+        .tab.active { background: #fff; color: #667eea; font-weight: 600; border-bottom: 2px solid #667eea; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .code { font-family: "Cascadia Code", "Fira Code", monospace; font-size: 12px; color: #888; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .refresh-btn { background: #667eea; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+        .refresh-btn:hover { background: #5568d3; }
+        .empty { text-align: center; padding: 40px; color: #ccc; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>LLM Gateway — 大模型智能网关</h1>
+            <span style="font-size:13px;opacity:.8">负载均衡 · 智能调度 · 提示词管理 · 命令审计</span>
+        </div>
+        <span class="badge" id="uptime">运行中</span>
+    </div>
+
+    <div style="margin-bottom: 16px;">
+        <button class="refresh-btn" onclick="loadAll()">刷新数据</button>
+        <span style="margin-left:12px;color:#999;font-size:13px" id="last-refresh"></span>
+    </div>
+
+    <!-- 统计卡片 -->
+    <div class="grid">
+        <div class="card">
+            <h2>请求总览</h2>
+            <div id="audit-stats"></div>
+        </div>
+        <div class="card">
+            <h2>缓存状态</h2>
+            <div id="cache-stats"></div>
+        </div>
+        <div class="card">
+            <h2>配置概览</h2>
+            <div id="config-info"></div>
+        </div>
+    </div>
+
+    <!-- Tab 切换 -->
+    <div class="tabs">
+        <div class="tab active" onclick="switchTab('channels')">通道健康</div>
+        <div class="tab" onclick="switchTab('breakers')">断路器</div>
+        <div class="tab" onclick="switchTab('logs')">审计日志</div>
+        <div class="tab" onclick="switchTab('prompts')">提示词</div>
+    </div>
+
+    <!-- 通道健康 -->
+    <div class="tab-content active" id="tab-channels">
+        <div class="card">
+            <h2>通道健康状态</h2>
+            <table class="table">
+                <thead><tr><th>通道 ID</th><th>健康状态</th><th>平均延迟</th><th>错误率</th><th>总请求</th><th>错误数</th></tr></thead>
+                <tbody id="channel-health-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- 断路器 -->
+    <div class="tab-content" id="tab-breakers">
+        <div class="card">
+            <h2>断路器状态</h2>
+            <table class="table">
+                <thead><tr><th>通道</th><th>状态</th><th>失败次数</th><th>失败阈值</th><th>恢复超时(秒)</th></tr></thead>
+                <tbody id="breaker-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- 审计日志 -->
+    <div class="tab-content" id="tab-logs">
+        <div class="card">
+            <h2>最近审计日志 <button class="refresh-btn" style="float:right;padding:4px 12px;font-size:12px" onclick="verifyChain()">验证哈希链</button></h2>
+            <div id="chain-result" style="margin-bottom:12px;font-size:13px"></div>
+            <table class="table">
+                <thead><tr><th>时间</th><th>Trace ID</th><th>模型</th><th>提供商</th><th>通道</th><th>状态</th><th>Token</th><th>延迟(ms)</th><th>哈希</th></tr></thead>
+                <tbody id="audit-logs-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- 提示词 -->
+    <div class="tab-content" id="tab-prompts">
+        <div class="card">
+            <h2>已注册提示词模板</h2>
+            <table class="table">
+                <thead><tr><th>ID</th><th>名称</th><th>描述</th><th>活跃版本</th><th>版本列表</th></tr></thead>
+                <tbody id="prompts-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+<script>
+const API = '';
+
+async function fetchJSON(url) {
+    try {
+        const r = await fetch(url);
+        return await r.json();
+    } catch(e) { console.error(url, e); return null; }
+}
+
+async function loadAll() {
+    const [status, audit, prompts] = await Promise.all([
+        fetchJSON('/v1/status'),
+        fetchJSON('/v1/audit/stats'),
+        fetchJSON('/v1/prompts'),
+    ]);
+
+    if (status) renderStatus(status);
+    if (audit) renderAuditStats(audit);
+    if (prompts) renderPrompts(prompts);
+
+    loadLogs();
+    document.getElementById('last-refresh').textContent = '最后刷新: ' + new Date().toLocaleTimeString();
+}
+
+function renderStatus(s) {
+    // 配置信息
+    const ci = document.getElementById('config-info');
+    ci.innerHTML = `
+        <div class="stat-row"><span class="stat-label">提供商数量</span><span class="stat-value">${s.providers.length}</span></div>
+        <div class="stat-row"><span class="stat-label">负载均衡策略</span><span class="stat-value">${s.load_balancing.strategy}</span></div>
+        <div class="stat-row"><span class="stat-label">限流算法</span><span class="stat-value">${s.rate_limiting.algorithm}</span></div>
+        <div class="stat-row"><span class="stat-label">默认 RPM</span><span class="stat-value">${s.rate_limiting.default_rpm}</span></div>
+        <div class="stat-row"><span class="stat-label">模型别名数</span><span class="stat-value">${Object.keys(s.model_aliases).length}</span></div>
+    `;
+
+    // 缓存统计
+    const cs = document.getElementById('cache-stats');
+    cs.innerHTML = `
+        <div class="stat-row"><span class="stat-label">缓存条目</span><span class="stat-value">${s.cache_stats.cache_size}</span></div>
+        <div class="stat-row"><span class="stat-label">命中次数</span><span class="stat-value green">${s.cache_stats.hits}</span></div>
+        <div class="stat-row"><span class="stat-label">未命中</span><span class="stat-value">${s.cache_stats.misses}</span></div>
+        <div class="stat-row"><span class="stat-label">命中率</span><span class="stat-value ${s.cache_stats.hit_rate>30?'green':''}">${s.cache_stats.hit_rate}%</span></div>
+    `;
+
+    // 通道健康
+    const tbody = document.getElementById('channel-health-body');
+    if (s.channel_health.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty">尚无通道健康数据 (需要发送请求后才有数据)</td></tr>';
+    } else {
+        tbody.innerHTML = s.channel_health.map(ch => `
+            <tr>
+                <td>${ch.channel_id}</td>
+                <td><span class="pill ${ch.healthy?'healthy':'unhealthy'}">${ch.healthy?'健康':'不健康'}</span></td>
+                <td>${ch.avg_latency_ms} ms</td>
+                <td>${(ch.error_rate*100).toFixed(1)}%</td>
+                <td>${ch.total_requests}</td>
+                <td>${ch.total_errors}</td>
+            </tr>
+        `).join('');
+    }
+
+    // 断路器
+    const bb = document.getElementById('breaker-body');
+    if (s.circuit_breakers.length === 0) {
+        bb.innerHTML = '<tr><td colspan="5" class="empty">尚无断路器数据</td></tr>';
+    } else {
+        bb.innerHTML = s.circuit_breakers.map(cb => {
+            const cls = cb.state === 'closed' ? 'closed' : cb.state === 'open' ? 'open' : 'half-open';
+            const label = cb.state === 'closed' ? '关闭(正常)' : cb.state === 'open' ? '打开(熔断)' : '半开(探测)';
+            return `<tr>
+                <td>${cb.name}</td>
+                <td><span class="pill ${cls}">${label}</span></td>
+                <td>${cb.failure_count}</td>
+                <td>${cb.failure_threshold}</td>
+                <td>${cb.recovery_timeout}</td>
+            </tr>`;
+        }).join('');
+    }
+}
+
+function renderAuditStats(a) {
+    const el = document.getElementById('audit-stats');
+    el.innerHTML = `
+        <div class="stat-row"><span class="stat-label">总请求数</span><span class="stat-value">${a.total_requests}</span></div>
+        <div class="stat-row"><span class="stat-label">成功请求</span><span class="stat-value green">${a.successful}</span></div>
+        <div class="stat-row"><span class="stat-label">失败请求</span><span class="stat-value ${a.failed>0?'red':''}">${a.failed}</span></div>
+        <div class="stat-row"><span class="stat-label">成功率</span><span class="stat-value green">${a.success_rate}%</span></div>
+        <div class="stat-row"><span class="stat-label">总 Token</span><span class="stat-value">${a.total_tokens.toLocaleString()}</span></div>
+        <div class="stat-row"><span class="stat-label">平均延迟</span><span class="stat-value">${a.avg_latency_ms} ms</span></div>
+    `;
+}
+
+async function loadLogs() {
+    const data = await fetchJSON('/v1/audit/logs?limit=20');
+    if (!data) return;
+    const tbody = document.getElementById('audit-logs-body');
+    if (data.logs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" class="empty">尚无审计日志 (发送请求后将自动记录)</td></tr>';
+    } else {
+        tbody.innerHTML = data.logs.map(l => `
+            <tr>
+                <td>${l.timestamp ? new Date(l.timestamp).toLocaleString() : '-'}</td>
+                <td class="code">${l.trace_id}</td>
+                <td>${l.model || '-'}</td>
+                <td>${l.provider || '-'}</td>
+                <td>${l.channel_id || '-'}</td>
+                <td><span class="pill ${l.status_code===200?'success':'error'}">${l.status_code}</span></td>
+                <td>${l.total_tokens || 0}</td>
+                <td>${l.latency_ms ? l.latency_ms.toFixed(0) : '-'}</td>
+                <td class="code" title="${l.curr_hash}">${l.curr_hash ? l.curr_hash.substring(0,16)+'...' : '-'}</td>
+            </tr>
+        `).join('');
+    }
+}
+
+function renderPrompts(prompts) {
+    const tbody = document.getElementById('prompts-body');
+    if (prompts.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty">无提示词</td></tr>';
+    } else {
+        tbody.innerHTML = prompts.map(p => `
+            <tr>
+                <td><strong>${p.id}</strong></td>
+                <td>${p.name}</td>
+                <td style="color:#999;font-size:12px">${p.description}</td>
+                <td><span class="pill healthy">${p.active_version}</span></td>
+                <td>${p.versions.map(v => `<span class="pill" style="background:#f0f0ff;color:#667eea;margin:2px">${v.version} (${v.weight}%)</span>`).join('')}</td>
+            </tr>
+        `).join('');
+    }
+}
+
+async function verifyChain() {
+    const result = await fetchJSON('/v1/audit/verify');
+    const el = document.getElementById('chain-result');
+    if (result) {
+        const color = result.valid ? '#52c41a' : '#f5222d';
+        const icon = result.valid ? '✅' : '⚠️';
+        el.innerHTML = `<span style="color:${color}">${icon} ${result.message} (共 ${result.total} 条记录${result.broken_at_id ? '，第 '+result.broken_at_id+' 条被篡改' : ''})</span>`;
+    }
+}
+
+function switchTab(name) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    event.target.classList.add('active');
+    document.getElementById('tab-' + name).classList.add('active');
+}
+
+// 初始加载
+loadAll();
+// 自动刷新
+setInterval(loadAll, 10000);
+</script>
+</body>
+</html>
